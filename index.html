@@ -146,11 +146,36 @@ tbody tr:hover{background:#fbf6ee}
 
 /* PRINT */
 @media print{
-  .topbar,.sidebar,.no-print,.modal-back .foot,.modal-back header{display:none!important}
-  body,#app,.content{background:#fff!important;padding:0!important;margin:0!important;max-width:none!important}
-  .modal-back{position:static;background:none;padding:0}
-  .modal{box-shadow:none;max-height:none;border-radius:0}
+  #login,#app,#toasts{display:none!important}
+  body{background:#fff!important;padding:0!important;margin:0!important}
+  .modal-back{position:static!important;inset:auto!important;background:none!important;padding:0!important;display:block!important}
+  .modal{box-shadow:none!important;max-width:none!important;max-height:none!important;border-radius:0!important;width:100%!important;animation:none!important}
+  .modal>header,.modal .foot,.no-print{display:none!important}
+  .modal .body{padding:0!important}
+  .doc{border:2px solid #7a1f2b!important;max-width:none!important;margin:0!important;padding:18px!important;page-break-inside:avoid}
+  .doc img{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact}
 }
+
+/* DESKTOP POLISH */
+@media (min-width:901px){
+  .content{padding:28px 32px}
+  .page-title{font-size:26px}
+  .stat-grid{grid-template-columns:repeat(4,1fr)}
+  .form-grid{gap:16px}
+  .card{padding:22px}
+}
+@media (min-width:1200px){
+  .stat-grid{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+}
+.layout{align-items:stretch}
+.sidebar{position:sticky;top:62px;height:calc(100vh - 62px)}
+
+/* RESULT-CARD photo box */
+.rc-photo{width:110px;height:130px;border:2px solid var(--gold);border-radius:6px;overflow:hidden;background:#fbf6ee;display:flex;align-items:center;justify-content:center;color:var(--maroon);font-weight:700;font-size:32px;flex-shrink:0}
+.rc-photo img{width:100%;height:100%;object-fit:cover}
+.doc-head-row{display:flex;gap:14px;align-items:flex-start;margin-bottom:14px}
+
 
 /* RESULT CARD / RECEIPT */
 .doc{max-width:760px;margin:0 auto;padding:28px;background:#fff;border:2px solid var(--maroon);border-radius:8px;color:#1c1410}
@@ -272,6 +297,20 @@ const seed = () => ({
 });
 
 let DB = (()=>{ try{ const x = JSON.parse(localStorage.getItem(K)); return x && x.users ? x : seed(); }catch{ return seed(); } })();
+const LOGO = (document.querySelector('#login .login-head img')||{}).src || '';
+function printDoc(rootEl){
+  const node = rootEl.querySelector('.doc'); if(!node){ window.print(); return; }
+  const w = window.open('','_blank','width=900,height=1100');
+  if(!w){ window.print(); return; }
+  const styles = Array.from(document.querySelectorAll('style,link[rel="stylesheet"]')).map(n=>n.outerHTML).join('\n');
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Print</title>'+styles+'<style>body{margin:0;padding:20px;background:#fff}.doc{margin:0 auto}</style></head><body>'+node.outerHTML+'</body></html>');
+  w.document.close();
+  const imgs = w.document.images; let pending = imgs.length;
+  const go = ()=>{ try{ w.focus(); w.print(); }catch(e){} setTimeout(()=>w.close(), 500); };
+  if(!pending) return setTimeout(go, 150);
+  Array.from(imgs).forEach(im=>{ if(im.complete) { if(--pending===0) go(); } else { im.onload=im.onerror=()=>{ if(--pending===0) go(); }; } });
+}
+
 const save = () => localStorage.setItem(K, JSON.stringify(DB));
 const uid = (p='id') => p+'_'+Math.random().toString(36).slice(2,9);
 
@@ -779,7 +818,7 @@ function feeReceipt(f){
   const s = DB.students.find(x=>x.id===f.studentId); const cls = s? DB.classes.find(c=>c.id===s.classId):null;
   const doc = el('div',{class:'doc'},
     el('div',{class:'doc-head'},
-      el('img',{src:LOGO}),
+      LOGO? el('img',{src:LOGO,alt:'School Logo'}) : el('div',{style:'width:78px;height:78px;border-radius:50%;background:var(--maroon);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800'},'MPS'),
       el('div',{class:'grow'},
         el('div',{class:'h1'},'Madni Public School'),
         el('div',{class:'h2'},'Jalal Pur Khakhi'),
@@ -801,7 +840,7 @@ function feeReceipt(f){
     el('div',{class:'sign'},el('div',{},'Cashier'),el('div',{},'Principal'))
   );
   const m = modal({title:'Fee Receipt', body:doc, size:'lg',
-    footer:[el('button',{class:'btn gold no-print',onClick:()=>window.print()},'🖨 Print / Save as PDF'),
+    footer:[el('button',{class:'btn gold no-print',onClick:()=>printDoc(m.root)},'🖨 Print / Save as PDF'),
             el('button',{class:'btn ghost no-print',onClick:()=>m.close()},'Close')]});
 }
 
@@ -837,37 +876,65 @@ function weeklyForm(){
         save();toast('Test created');document.querySelector('.modal-back').remove();render();}},'Create')]});
 }
 function weeklyMarks(x){
-  const students = DB.students.filter(s=>s.classId===x.classId);
+  const allStudents = DB.students.filter(s=>s.classId===x.classId);
   const inputs={};
-  const t = el('table',{},el('thead',{},el('tr',{},el('th',{},'Roll'),el('th',{},'Name'),el('th',{},'Marks /'+x.total),el('th',{},'%'))),
-    el('tbody',{},...students.map(s=>{const cur=x.marks[s.id]??'';const pctCell=el('td',{},'-');
-      const inp=inputs[s.id]=el('input',{class:'input',type:'number',value:cur,min:0,max:x.total,style:'max-width:120px',oninput:e=>{const v=+e.target.value;pctCell.textContent= v? Math.round(v/x.total*100)+'%' :'-';}});
-      if(cur!=='') pctCell.textContent=Math.round(cur/x.total*100)+'%';
-      return el('tr',{},el('td',{},s.roll),el('td',{},s.name),el('td',{},inp),pctCell);})));
-  const body = el('div',{class:'table-wrap'},t);
-  modal({title:'Marks — '+x.name, body, size:'lg',
+  const cls = DB.classes.find(c=>c.id===x.classId);
+  const sub = DB.subjects.find(s=>s.id===x.subjectId);
+  const info = el('div',{class:'row',style:'gap:10px;margin-bottom:10px;font-size:13px;color:var(--muted)'},
+    el('span',{class:'tag'},'Class: '+(cls?cls.name+(cls.section?' - '+cls.section:''):'-')),
+    el('span',{class:'tag'},'Subject: '+(sub?sub.name:'-')),
+    el('span',{class:'tag'},'Total: '+x.total));
+  const search = el('input',{class:'input',placeholder:'🔍 Filter by Roll No or Student Name…',style:'max-width:340px;margin-bottom:10px',oninput:e=>renderRows(e.target.value)});
+  const tbodyEl = el('tbody');
+  const tableEl = el('table',{},el('thead',{},el('tr',{},el('th',{},'Roll'),el('th',{},'Name'),el('th',{},'Marks /'+x.total),el('th',{},'%'))), tbodyEl);
+  function renderRows(q){
+    const list = q? allStudents.filter(s=>(s.roll+' '+s.name).toLowerCase().includes(q.toLowerCase())) : allStudents;
+    tbodyEl.innerHTML='';
+    if(!list.length){ tbodyEl.appendChild(el('tr',{},el('td',{colspan:'4',style:'text-align:center;padding:20px;color:var(--muted)'},'No students match.'))); return; }
+    list.forEach(s=>{
+      const cur=x.marks[s.id]??'';
+      const pctCell=el('td',{},cur!==''?Math.round(cur/x.total*100)+'%':'-');
+      const inp=inputs[s.id]=inputs[s.id]||el('input',{class:'input',type:'number',value:cur,min:0,max:x.total,style:'max-width:120px',oninput:e=>{const v=+e.target.value;pctCell.textContent= v? Math.round(v/x.total*100)+'%' :'-';}});
+      tbodyEl.appendChild(el('tr',{},el('td',{},el('b',{},s.roll)),el('td',{},s.name),el('td',{},inp),pctCell));
+    });
+  }
+  renderRows('');
+  const body = el('div',{}, info, search, el('div',{class:'table-wrap'},tableEl));
+  modal({title:'Enter Marks — '+x.name, body, size:'lg',
     footer:[el('button',{class:'btn ghost',onClick:()=>document.querySelector('.modal-back').remove()},'Cancel'),
       el('button',{class:'btn',onClick:()=>{Object.entries(inputs).forEach(([id,inp])=>{if(inp.value!=='')x.marks[id]=+inp.value;else delete x.marks[id];});save();toast('Marks saved');document.querySelector('.modal-back').remove();render();}},'Save Marks')]});
 }
 
 /* ============== ANNUAL RESULT ============== */
-let annualSearchSid = '';
+let annualSearchSid = '', annualClassId = '';
 VIEWS.annual = (v)=>{
   v.appendChild(el('h1',{class:'page-title'},'Annual Result'));
-  v.appendChild(el('p',{class:'page-sub'},'Search a student, enter subject-wise marks, auto-calculated grade & position. Separate from Weekly Tests.'));
+  v.appendChild(el('p',{class:'page-sub'},'Select a class, then search a student to enter or view annual marks. Auto-calculated grade & position.'));
 
-  // search bar
-  const wrap = el('div',{class:'card',style:'margin-bottom:14px;position:relative'});
-  wrap.appendChild(el('label',{class:'label'},'🔍 Search student by Roll No or Name'));
-  const inp = el('input',{class:'input',placeholder:'Type roll or name…',oninput:e=>renderSugg(e.target.value)});
-  wrap.appendChild(inp);
-  const sugg = el('div',{style:'margin-top:8px;display:flex;flex-wrap:wrap;gap:6px'});
+  const myClasses = SESSION.role==='teacher'? teacherClasses(SESSION.userId) : DB.classes;
+  if(!myClasses.length){ v.appendChild(el('div',{class:'empty'},el('div',{class:'big'},'🚫'),'No classes available.')); return; }
+  if(!annualClassId || !myClasses.some(c=>c.id===annualClassId)) annualClassId = myClasses[0].id;
+
+  // class + search bar
+  const wrap = el('div',{class:'card',style:'margin-bottom:14px'});
+  const row = el('div',{class:'form-grid'});
+  const clsSel = el('select',{class:'input',onchange:e=>{annualClassId=e.target.value;annualSearchSid='';renderSugg('');inp.value='';}},
+    ...myClasses.map(c=>el('option',{value:c.id,selected:c.id===annualClassId?'':null},c.name+(c.section?' - '+c.section:''))));
+  row.appendChild(el('div',{},el('label',{class:'label'},'Select Class *'),clsSel));
+  const inp = el('input',{class:'input',placeholder:'Type Roll No or Student Name…',oninput:e=>renderSugg(e.target.value)});
+  row.appendChild(el('div',{},el('label',{class:'label'},'Search Student in Class'),inp));
+  wrap.appendChild(row);
+  const sugg = el('div',{style:'margin-top:10px;display:flex;flex-wrap:wrap;gap:6px'});
   wrap.appendChild(sugg);
-  function renderSugg(q){ sugg.innerHTML=''; if(!q||q.length<1) return;
-    const list = visibleStudents().filter(s=>(s.name+' '+s.roll+' '+(s.fatherName||'')).toLowerCase().includes(q.toLowerCase())).slice(0,8);
+  function renderSugg(q){
+    sugg.innerHTML='';
+    const inClass = visibleStudents().filter(s=>s.classId===annualClassId);
+    if(!inClass.length){ sugg.appendChild(el('span',{class:'tag'},'No students in this class')); return; }
+    const list = (q? inClass.filter(s=>(s.name+' '+s.roll+' '+(s.fatherName||'')).toLowerCase().includes(q.toLowerCase())) : inClass).slice(0,15);
     list.forEach(s=>{ sugg.appendChild(el('button',{class:'btn sm ghost',onClick:()=>{annualSearchSid=s.id;render();}},s.roll+' — '+s.name)); });
     if(!list.length) sugg.appendChild(el('span',{class:'tag'},'No matches'));
   }
+  renderSugg('');
   v.appendChild(wrap);
 
   if(!annualSearchSid){ v.appendChild(el('div',{class:'empty'},el('div',{class:'big'},'🎓'),'Search and select a student to enter or view annual exam marks.')); return; }
@@ -880,13 +947,26 @@ VIEWS.annual = (v)=>{
   if(!exam){ exam = {id:uid('ae'),year,name:'Annual Examination '+year,classId:s.classId,marks:{}}; DB.annualExams.push(exam); save(); }
   exam.marks[s.id] = exam.marks[s.id] || {};
 
-  // student profile
-  v.appendChild(el('div',{class:'card',style:'display:flex;gap:16px;align-items:center;margin-bottom:14px'},
-    el('div',{class:'av lg'}, s.photo? el('img',{src:s.photo}): document.createTextNode((s.name||'?').slice(0,1).toUpperCase())),
-    el('div',{class:'grow'},
+  // student profile + photo upload
+  const photoEl = el('div',{class:'av lg'}, s.photo? el('img',{src:s.photo}): document.createTextNode((s.name||'?').slice(0,1).toUpperCase()));
+  const fileInp = el('input',{type:'file',accept:'image/*',class:'hidden',onchange:e=>{
+    const file=e.target.files[0]; if(!file) return;
+    const rd=new FileReader(); rd.onload=()=>{const img=new Image();img.onload=()=>{
+      const sz=Math.min(img.width,img.height);const sx=(img.width-sz)/2,sy=(img.height-sz)/2;
+      const cv=document.createElement('canvas');cv.width=300;cv.height=300;
+      cv.getContext('2d').drawImage(img,sx,sy,sz,sz,0,0,300,300);
+      s.photo=cv.toDataURL('image/jpeg',0.85); save(); toast('Photo updated'); render();
+    };img.src=rd.result;};rd.readAsDataURL(file);
+  }});
+  v.appendChild(el('div',{class:'card',style:'display:flex;gap:16px;align-items:center;margin-bottom:14px;flex-wrap:wrap'},
+    photoEl,
+    el('div',{class:'grow',style:'min-width:200px'},
       el('h2',{style:'margin:0;color:var(--maroon-2)'},s.name),
       el('div',{style:'color:var(--muted);font-size:13px;margin-top:4px'},'Roll: '+s.roll+' · Father: '+(s.fatherName||'-')+' · Class: '+(cls?cls.name+(cls.section?' - '+cls.section:''):'-'))),
-    el('button',{class:'btn ghost sm',onClick:()=>{annualSearchSid='';render();}},'Change')));
+    SESSION.role!=='parent'? el('div',{class:'row'},
+      el('button',{class:'btn sm gold',onClick:()=>fileInp.click()}, s.photo?'📷 Change Photo':'📷 Upload Photo'),
+      fileInp):null,
+    el('button',{class:'btn ghost sm',onClick:()=>{annualSearchSid='';render();}},'Change Student')));
 
   // marks table
   const inputs={}; let total=0, obtained=0;
@@ -953,20 +1033,20 @@ function resultCard(s, exam){
 
   const doc = el('div',{class:'doc'},
     el('div',{class:'doc-head'},
-      el('img',{src:LOGO}),
+      LOGO? el('img',{src:LOGO,alt:'School Logo'}) : el('div',{style:'width:78px;height:78px;border-radius:50%;background:var(--maroon);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800'},'MPS'),
       el('div',{class:'grow'},
         el('div',{class:'h1'},'Madni Public School'),
         el('div',{class:'h2'},'Jalal Pur Khakhi'),
         el('div',{class:'h3'},'Learn • Lead • Excel'))),
     el('h2',{class:'dtitle'},'ANNUAL RESULT CARD — '+exam.year),
-    el('div',{class:'row',style:'gap:16px;margin-bottom:12px'},
-      el('div',{class:'av lg'}, s.photo? el('img',{src:s.photo}): document.createTextNode((s.name||'?').slice(0,1).toUpperCase())),
+    el('div',{class:'doc-head-row'},
+      el('div',{class:'rc-photo'}, s.photo? el('img',{src:s.photo,alt:'Student Photo'}): document.createTextNode((s.name||'?').slice(0,1).toUpperCase())),
       el('div',{class:'grow meta',style:'display:grid;grid-template-columns:repeat(2,1fr);gap:6px 18px;font-size:13px'},
-        el('div',{},el('b',{},'Name: '),s.name),
+        el('div',{},el('b',{},'Student Name: '),s.name),
         el('div',{},el('b',{},'Roll No: '),s.roll),
-        el('div',{},el('b',{},'Father: '),s.fatherName||'-'),
+        el('div',{},el('b',{},'Father Name: '),s.fatherName||'-'),
         el('div',{},el('b',{},'Class: '),cls?cls.name+(cls.section?' - '+cls.section:''):'-'),
-        el('div',{},el('b',{},'DOB: '),s.dob||'-'),
+        el('div',{},el('b',{},'Date of Birth: '),s.dob||'-'),
         el('div',{},el('b',{},'Examination: '),exam.name))),
     el('table',{},el('thead',{},el('tr',{},el('th',{},'Subject'),el('th',{style:'text-align:center'},'Max'),el('th',{style:'text-align:center'},'Obtained'),el('th',{style:'text-align:center'},'Grade'))),
       el('tbody',{}, ...rows,
@@ -979,7 +1059,7 @@ function resultCard(s, exam){
     el('div',{class:'sign'},el('div',{},'Class Teacher'),el('div',{},'Examination In-charge'),el('div',{},'Principal'))
   );
   const m = modal({title:'Annual Result Card', body:doc, size:'lg',
-    footer:[el('button',{class:'btn gold no-print',onClick:()=>window.print()},'🖨 Print / Save as PDF'),
+    footer:[el('button',{class:'btn gold no-print',onClick:()=>printDoc(m.root)},'🖨 Print / Save as PDF'),
             el('button',{class:'btn ghost no-print',onClick:()=>m.close()},'Close')]});
 }
 
